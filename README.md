@@ -1,4 +1,3 @@
-# gzip
-GZIP implementation for LuvIt
+# Gzip
 
-TODO: Upload to Lit
+Gzip implementation for LuvIt
