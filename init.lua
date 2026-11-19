@@ -9,11 +9,11 @@ local SIZE_T = 0
 local MINIZ_NOCOPY = false
 
 local function latin1_to_utf8(str)
-	local len = math.ceil(#str / MAX_UNPACK_SIZE)
-	local result = table.new(len)
+	local len = #str
+	local result = table.new(math.ceil(#str / MAX_UNPACK_SIZE))
 
-	for i = 1, len do
-		result[i] = utf8.char(string.byte(str, i, i))
+	for i = 1, len, MAX_UNPACK_SIZE do
+		result[math.ceil(i / MAX_UNPACK_SIZE)] = utf8.char(string.byte(str, i, math.min(i + MAX_UNPACK_SIZE - 1, len)))
 	end
 
 	return table.concat(result)
@@ -32,7 +32,7 @@ local function utf8_to_latin1(str)
 end
 
 local function schemaUnpack(data, schema, idx)
-	if string.find(schema, "[sz]") then
+	if not string.find(schema, "[sz]") then
 		return string.packsize(schema), return string.unpack(data, schema, idx)
 	else -- TODO: Make this support endian (and alingment?)
 		local schemas = string.split(schema, "s")
@@ -59,14 +59,14 @@ local function schemaUnpack(data, schema, idx)
 end
 
 local function compress(data, name, t, comment)  -- TODO: Maybe build or a part of it in C or with FFI to avoid double allocation of compressed string?
-	local result = { string.pack("c2 b B L b b", "\x1F\x8B", 8, bit32.bor(???, 0x2, 0x0, name and 0x4 or 0, comment and 0x8 and 0), t or 0, 0, FILESYSTEM) }
+	local result = { string.pack("c2 b B L b b", "\x1F\x8B", 8, bit32.bor(#data <= 2^12 and not string.find(data, "[^%g ]") and 0x1 or 0, 0x2, 0x0, name and 0x4 or 0, comment and 0x8 and 0), t or 0, 0, FILESYSTEM) }
 
 	if name then
-		table.insert(result, utf8_to_latin1(string.gsub(name, "\r\n", "\n"))..(string.sub(name, -1, -1) ~= "\0" and "\0" or ""))
+		table.insert(result, select(2, pcall(utf8_to_latin1, string.gsub(name, "\r\n", "\n")))..(string.sub(name, -1, -1) ~= "\0" and "\0" or ""))
 	end
 
 	if comment then
-		table.insert(result, utf8_to_latin1(string.gsub(comment, "\r\n", "\n"))..(string.sub(comment, -1, -1) ~= "\0" and "\0" or ""))
+		table.insert(result, select(2, pcall(utf8_to_latin1, string.gsub(comment, "\r\n", "\n")))..(string.sub(comment, -1, -1) ~= "\0" and "\0" or ""))
 	end
 
 	table.insert(result, string.pack("H", bit32.rshift(miniz.crc32(table.concat(result)), 16)))
