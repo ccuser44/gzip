@@ -58,7 +58,7 @@ local function schemaUnpack(data, schema, idx)
 	end
 end
 
-local function compress(data, name, t, comment)
+local function compress(data, name, t, comment)  -- TODO: Maybe build or a part of it in C or with FFI to avoid double allocation of compressed string?
 	local result = { string.pack("c2 b B L b b", "\x1F\x8B", 8, bit32.bor(???, 0x2, 0x0, name and 0x4 or 0, comment and 0x8 and 0), t or 0, 0, FILESYSTEM) }
 
 	if name then
