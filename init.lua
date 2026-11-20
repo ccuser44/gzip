@@ -33,7 +33,7 @@ end
 
 local function schemaUnpack(data, schema, idx)
 	if not string.find(schema, "[sz]") then
-		return string.packsize(schema), return string.unpack(data, schema, idx)
+		return string.packsize(schema), string.unpack(data, schema, idx)
 	else -- TODO: Make this support endian (and alingment?)
 		local schemas = string.split(schema, "s")
 		local args = table.pack(string.unpack(data, schemas[1], idx))
@@ -45,13 +45,13 @@ local function schemaUnpack(data, schema, idx)
 
 			if string.find(v, "%d") then
 				slen = string.unpack(data, "I"..string.sub(v, 1, 1), idx + len)
-				len += 1
+				len = len + 1
 			end
 
 			local newArgs = table.pack(string.unpack(data, slen and "c"..slen..string.sub(v, 2) or v, idx + len))
 			table.move(newArgs, 1, newArgs.n, args.n + 1)
-			args.n += newArgs.n
-			len += string.packsize(string.gsub(v, "z", "")) -- TODO: Handle Z
+			args.n = args.n + newArgs.n
+			len = len + string.packsize(string.gsub(v, "z", "")) -- TODO: Handle Z
 		end
 
 		return len, table.unpack(args)
@@ -59,7 +59,7 @@ local function schemaUnpack(data, schema, idx)
 end
 
 local function compress(data, name, t, comment)  -- TODO: Maybe build or a part of it in C or with FFI to avoid double allocation of compressed string?
-	local result = { string.pack("c2 b B L b b", "\x1F\x8B", 8, bit32.bor(#data <= 2^12 and not string.find(data, "[^%g ]") and 0x1 or 0, 0x2, 0x0, name and 0x4 or 0, comment and 0x8 and 0), t or 0, 0, FILESYSTEM) }
+	local result = { string.pack("c2 b B L b b", "\x1F\x8B", 8, bit.bor(#data <= 2^12 and not string.find(data, "[^%g ]") and 0x1 or 0, 0x2, 0x0, name and 0x4 or 0, comment and 0x8 and 0), t or 0, 0, FILESYSTEM) }
 
 	if name then
 		table.insert(result, select(2, pcall(utf8_to_latin1, string.gsub(name, "\r\n", "\n")))..(string.sub(name, -1, -1) ~= "\0" and "\0" or ""))
@@ -69,7 +69,7 @@ local function compress(data, name, t, comment)  -- TODO: Maybe build or a part 
 		table.insert(result, select(2, pcall(utf8_to_latin1, string.gsub(comment, "\r\n", "\n")))..(string.sub(comment, -1, -1) ~= "\0" and "\0" or ""))
 	end
 
-	table.insert(result, string.pack("H", bit32.rshift(miniz.crc32(table.concat(result)), 16)))
+	table.insert(result, string.pack("H", bit.rshift(miniz.crc32(table.concat(result)), 16)))
 	table.insert(result, miniz.inflate(data))
 	table.insert(result, string.pack("L L", miniz.crc32(result[#result]), #result[#result]))
 
@@ -80,7 +80,7 @@ local function decompress(data, strict)
 	assert(string.sub(data, 1, 2) == "\x1F\x8B", "Input is not a gzip stream!")
 	assert(string.byte(data, 3, 3) == 8, "Unsupported compression method.")
 	local flags, t, extra, filesystem = string.unpack(data, "B L b b")
-	local ftext, fhcrc, fextra, fname, fcomment = bit32.band(flags, 0x1) == 0x1, bit32.band(flags, 0x2) == 0x2, bit32.band(flags, 0x4) == 0x4, bit32.band(flags, 0x8) == 0x8, bit32.band(flags, 0x16) == 0x16
+	local ftext, fhcrc, fextra, fname, fcomment = bit.band(flags, 0x1) == 0x1, bit.band(flags, 0x2) == 0x2, bit.band(flags, 0x4) == 0x4, bit.band(flags, 0x8) == 0x8, bit.band(flags, 0x16) == 0x16
 	local i = 10
 	local name, comment
 
@@ -100,10 +100,10 @@ local function decompress(data, strict)
 
 	if fhcrc then
 		if strict then
-			assert(schemaUnpack(data, "H", i) == bit32.rshift(miniz.crc32(string.sub(data, 1, i)), 16), "Header checksum doesn't match!")
+			assert(schemaUnpack(data, "H", i) == bit.rshift(miniz.crc32(string.sub(data, 1, i)), 16), "Header checksum doesn't match!")
 		end
 
-		i += 2
+		i = i + 2
 	end
 
 	if strict then
@@ -120,6 +120,8 @@ local success, err = pcall(function()
 	local s = "abc"..miniz.inflate("1234567890qwertyuiopasdfghjklzxcvbnm").."def"
 	return miniz.deflate(s, 4, #s - 3)
 end)
+
+MINIZ_NOCOPY = success and err
 
 return {
 	compress = compress,
