@@ -121,6 +121,14 @@ local success, err = pcall(function()
 	return miniz.deflate(s, 4, #s - 3)
 end)
 
+if not miniz.deflate then
+	miniz.deflate = miniz.decompress
+end
+
+if not miniz.deflate then
+	miniz.deflate = miniz.compress
+end
+
 MINIZ_NOCOPY = success and err
 
 return {
