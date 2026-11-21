@@ -19,18 +19,19 @@ local function latin1_to_utf8(str)
 end
 
 local function utf8_to_latin1(str)
-	local result = table.new(utf8.len(str))
+	local i, result = i, table.new(utf8.len(str))
 
-	for i, codepoint in utf8.codes(str) do
+	for _, codepoint in utf8.codes(str) do
 		assert(codepoint <= 255, "Character cannot be represented in Latin-1")
-
+		i = i + 1
 		result[i] = string.char(codepoint)
 	end
 
 	return table.concat(result)
 end
 
-local function getStrSizes(schema, args, onlyNull)
+-- TODO: Unnecessary so remove. But use parts of this for other project
+--[[local function getStrSizes(schema, args, onlyNull)
 	schema = string.gsub(schema, "[<>=%dx!]", "")
 	local size, last = 0, 1
 
@@ -67,10 +68,10 @@ local function schemaUnpack(data, schema, idx)
 
 		return len, table.unpack(args)
 	end
-end
+end]]
 
 local function compress(data, name, t, comment, filesystem)  -- TODO: Maybe build or a part of it in C or with FFI to avoid double allocation of compressed string?
-	local result = { string.pack("c2 b B L b b", "\x1F\x8B", 8, bit.bor(#data <= 2^12 and not string.find(data, "[^%g ]") and 0x1 or 0, 0x2, 0x0, name and 0x8 or 0, comment and 0x10 or 0), t or 0, 2, filesystem or 0xFF) }
+	local result = { string.pack("<c2 b B L b b", "\x1F\x8B", 8, bit.bor(#data <= 2^12 and not string.find(data, "[^%g ]") and 0x1 or 0, 0x2, 0x0, name and 0x8 or 0, comment and 0x10 or 0), t or 0, 2, filesystem or 0xFF) }
 
 	if name then
 		table.insert(result, select(2, pcall(utf8_to_latin1, string.gsub(name, "\r\n", "\n")))..(string.sub(name, -1, -1) ~= "\0" and "\0" or ""))
@@ -80,9 +81,9 @@ local function compress(data, name, t, comment, filesystem)  -- TODO: Maybe buil
 		table.insert(result, select(2, pcall(utf8_to_latin1, string.gsub(comment, "\r\n", "\n")))..(string.sub(comment, -1, -1) ~= "\0" and "\0" or ""))
 	end
 
-	table.insert(result, string.pack("H", bit.band(miniz.crc32(table.concat(result)), 0xFF)))
+	table.insert(result, string.pack("<H", bit.band(miniz.crc32(table.concat(result)), 0xFFFF)))
 	table.insert(result, miniz.deflate(data))
-	table.insert(result, string.pack("L L", miniz.crc32(result[#result]), #result[#result]))
+	table.insert(result, string.pack("<L L", miniz.crc32(data), #data))
 
 	return table.concat(result)
 end
@@ -90,44 +91,44 @@ end
 local function decompress(data, strict)
 	assert(string.sub(data, 1, 2) == "\x1F\x8B", "Input is not a gzip stream!")
 	assert(string.byte(data, 3, 3) == 8, "Unsupported compression method.")
-	local flags, t, extra, filesystem = string.unpack(data, "B L b b")
+	local flags, t, extra, filesystem, i = string.unpack(data, "<B L b b")
 	local ftext, fhcrc, fextra, fname, fcomment = bit.band(flags, 0x1) ~= 0, bit.band(flags, 0x2) ~= 0, bit.band(flags, 0x4) ~= 0, bit.band(flags, 0x8) ~= 0, bit.band(flags, 0x10) ~= 0
-	local i = 10
+	assert(not strict or bit.band(flags, 0xE0) == 0, "Reserved flags present but behavior not implemented.")
 	local name, comment
 
 	if fextra then
 		local xdata
-		i, xdata = schemaUnpack("S2", data, i)
+		xdata, i = string.unpack("<S2", data, i)
 		-- TODO: Parse extra data
-		--assert(#xdata < #data - 4 - (fhcrc and 2 or 0) - (fname and ))
 	end
 
 	if fname then
-		i, name = schemaUnpack(data, "z", i)
+		name, i = string.unpack("<z", data, i)
 		name = latin1_to_utf8(string.gsub(name, "\r\n", "\n"))
 	end
 
 	if fcomment then
-		i, comment = schemaUnpack(data, "z", i)
+		comment, i = string.unpack("<z", data, i)
 		comment = latin1_to_utf8(string.gsub(comment, "\r\n", "\n"))
 	end
 
 	if fhcrc then
 		if strict then
-			assert(schemaUnpack(data, "H", i) == bit.band(miniz.crc32(string.sub(data, 1, i - 1)), 0xFFFF), "Header checksum doesn't match!")
+			assert(string.unpack("<H", data, i) == bit.band(miniz.crc32(string.sub(data, 1, i - 1)), 0xFFFF), "Header checksum doesn't match!")
 		end
 
 		i = i + 2
 	end
 
 	if strict then
-		local real = miniz.inflate(MINIZ_NOCOPY and data or string.sub(data, i, -9), MINIZ_NOCOPY and i or nil, MINIZ_NOCOPY and #data - 8 or nil)
-		assert(schemaUnpack(data, "L", i) == miniz.crc32(real), "Data checksum doesn't match!")
-		assert(schemaUnpack(data, "L", i + 4) == #real % 2^32, "Data length doesn't match!")
+		local real = miniz.inflate(MINIZ_NOCOPY and data or string.sub(data, i, -9), MINIZ_NOCOPY and i or nil, MINIZ_NOCOPY and #data - 8 - i or nil)
+		i = #data - 8
+		assert(string.unpack("<L", data, i) == miniz.crc32(real), "Data checksum doesn't match!")
+		assert(string.unpack("<L", data, i + 4) == #real % 2^32, "Data length doesn't match!")
 
 		return real
 	else
-		return miniz.inflate(MINIZ_NOCOPY and data or string.sub(data, i, -9), MINIZ_NOCOPY and i or nil, MINIZ_NOCOPY and #data - 8 or nil)
+		return miniz.inflate(MINIZ_NOCOPY and data or string.sub(data, i, -9), MINIZ_NOCOPY and i or nil, MINIZ_NOCOPY and #data - 8 - i or nil)
 	end
 end
 
