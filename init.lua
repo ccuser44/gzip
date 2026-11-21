@@ -1,5 +1,4 @@
 local miniz = require("miniz")
-local strext = require("string-extensions")
 
 pcall(require, "table.new") -- Support for LuaJIT's require requirement (LuaJIT should make them always on tbh)
 pcall(require, "table.clear")

@@ -6,7 +6,7 @@ return {
 	license = "MIT",
 	author = { name = "ccuser44", email = "68124053+ccuser44@users.noreply.github.com" },
 	homepage = "https://github.com/ccuser44/gzip",
-	dependencies = { "Richy-Z/string-extensions" },
+	dependencies = { },
 	files = {
 		"**.lua",
 		"!test*"
